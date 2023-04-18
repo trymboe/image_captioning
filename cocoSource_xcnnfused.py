@@ -23,10 +23,14 @@ class ImageCaptionModel(nn.Module):
         self.embedding_layer = nn.Embedding(self.vocabulary_size, self.embedding_size)
         # TODO: The output layer (final layer) is a linear layer. What should be the size (dimensions) of its output?
         #         Replace None with a linear layer with correct output size
-        self.output_layer = None  # nn.Linear(self.hidden_state_sizes, )
+        self.output_layer = nn.Linear(self.hidden_state_sizes, self.vocabulary_size)  # nn.Linear(self.hidden_state_sizes, )
         self.nn_map_size = 512  # The output size for the image features after the processing via self.inputLayer
         # TODO: Check the task description and replace None with the correct input layer
-        self.input_layer = None
+        self.input_layer = nn.Sequential(
+            nn.Dropout(p=0.25),
+            nn.Linear(self.number_of_cnn_features, self.nn_map_size),
+            nn.LeakyReLU()
+        )
 
         self.simplified_rnn = True
         
@@ -117,8 +121,7 @@ class RNNOneLayerSimplified(nn.Module):
         logits_sequence = []
         current_hidden_state = initial_hidden_state
         # TODO: Fetch the first (index 0) embeddings that should go as input to the RNN.
-        # Use these tokens in the loop(s) below
-        current_time_step_embeddings = None  # Should have shape (batch_size, embedding_size)
+        current_time_step_embeddings = all_embeddings[:, 0, :]  # Fetching the first embeddings for input
 
         # Use for loops to run over "sequence_length" and "self.num_rnn_layers" to compute logits
         for i in range(sequence_length):
@@ -126,15 +129,15 @@ class RNNOneLayerSimplified(nn.Module):
             # In a two-layer RNN you need to iterate through the 2 layers
             # The input for the 2nd layer will be the output (hidden state) of the 1st layer
             # TODO: Create the input for the RNN cell
-            input_for_the_first_layer = None
+            input_for_the_first_layer = current_time_step_embeddings
             # Note that the current_hidden_state has 3 dims i.e. len(current_hidden_state.shape) == 3
             # with first dimension having only 1 element, while the RNN cell needs a state with 2 dims as input
             # TODO: Call the RNN cell with input_for_the_first_layer and current_hidden_state as inputs
             #       Hint: Unsqueeze the output
-            current_hidden_state = None
+            current_hidden_state = self.rnn_cell(input_for_the_first_layer, current_hidden_state)[0]
             # For a multi-layer RNN, apply the output layer (as done below) only after the last layer of the RNN
             # NOTE: for LSTM you use only the part(1st half of the tensor) which corresponds to the hidden state
-            logits_i = output_layer(current_hidden_state[0, :])
+            logits_i = output_layer(current_hidden_state[-1])
             logits_sequence.append(logits_i)
             # Find the next predicted output element
             predictions = torch.argmax(logits_i, dim=1)
@@ -147,7 +150,7 @@ class RNNOneLayerSimplified(nn.Module):
                     current_time_step_embeddings = all_embeddings[:, i+1, :]
                 else:
                     current_time_step_embeddings = embedding_layer(predictions)
-
+            
         logits = torch.stack(logits_sequence, dim=1)  # Convert the sequence of logits to a tensor
 
         return logits, current_hidden_state
@@ -202,7 +205,7 @@ class RNN(nn.Module):
         embeddings = embedding_layer(input=tokens)  # Should have shape (batch_size, sequence_length, embedding_size)
 
         logits_sequence = []
-        current_hidden_state = initial_hidden_state
+        current_hidden_state =  torch.zeros((self.num_rnn_layers, tokens.shape[0], self.hidden_state_sizes))
         # TODO: Fetch the first (index 0) embeddings that should go as input to the RNN.
         # Use these tokens in the loop(s) below
         input_tokens = None  # Should have shape (batch_size, embedding_size)
